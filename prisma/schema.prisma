@@ -1,0 +1,90 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Categoria {
+  id            String   @id @default(cuid())
+  nombre        String   @unique
+  descripcion   String?
+  color         String   @default("#3b82f6")
+  palabrasClave String?  // JSON string con array de palabras clave
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relaciones
+  articulos Articulo[]
+  fuentes   Fuente[]
+
+  @@map("categorias")
+}
+
+model Fuente {
+  id              String   @id @default(cuid())
+  nombre          String   @unique
+  url             String
+  selectoresCss   String   // Objeto con los selectores CSS para extraer datos (JSON string)
+  categoriaId     String?
+  limiteArticulos Int      @default(50)
+  activa          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relaciones
+  categoria Categoria? @relation(fields: [categoriaId], references: [id])
+  logs      Log[]
+
+  @@map("fuentes")
+}
+
+model Articulo {
+  id          String   @id @default(cuid())
+  titulo      String
+  url         String   @unique
+  contenido   String?
+  imagen      String?
+  fuente      String
+  categoriaId String?
+  fecha       DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relaciones
+  categoria Categoria? @relation(fields: [categoriaId], references: [id])
+
+  @@map("articulos")
+}
+
+model Log {
+  id        String   @id @default(cuid())
+  fecha     DateTime @default(now())
+  fuenteId  String?
+  estado    String   // 'success', 'error', 'warning'
+  mensaje   String
+  detalles  String?  // Información adicional del log (JSON string)
+
+  // Relaciones
+  fuente Fuente? @relation(fields: [fuenteId], references: [id])
+
+  @@map("logs")
+}
+
+model ModeloML {
+  id          String   @id @default(cuid())
+  nombre      String   @unique
+  tipo        String   // 'categoria', 'sentiment', etc.
+  precision   Float?
+  modeloData  String  // Datos del modelo serializado (JSON string)
+  entrenado   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("modelos_ml")
+}

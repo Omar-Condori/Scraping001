@@ -1,0 +1,27 @@
+# Archivos y directorios a ignorar
+node_modules/
+.next/
+.env.local
+.env.production
+.env.development
+dist/
+build/
+*.log
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Base de datos
+*.db
+*.sqlite
+
+# Logs
+logs/
+*.log
+
+# Archivos temporales
+tmp/
+temp/

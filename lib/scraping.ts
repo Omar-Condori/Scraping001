@@ -216,15 +216,16 @@ export class ScrapingService {
         // Generar artículos únicos para esta fuente
         for (let i = 0; i < articulosFuente.length; i++) {
           const articulo = articulosFuente[i];
-          const timestamp = Date.now() + i;
+          // Usar un hash del contenido para generar URLs consistentes
+          const contenidoHash = this.generarHash(articulo.titulo + articulo.contenido);
           
           articulos.push({
-            titulo: `${articulo.titulo} #${timestamp}`,
-            url: `${url}/articulo-${timestamp}`,
+            titulo: articulo.titulo,
+            url: `${url}/articulo-${contenidoHash}`,
             contenido: articulo.contenido,
             imagen: null, // Sin imagen por defecto
             fuente: hostname,
-            categoriaId: await this.determinarCategoria(`${articulo.titulo} #${timestamp}`, articulo.contenido)
+            categoriaId: await this.determinarCategoria(articulo.titulo, articulo.contenido)
           });
         }
       }
@@ -322,28 +323,54 @@ export class ScrapingService {
 
   async guardarArticulos(articulos: ArticuloScraped[]): Promise<number> {
     let guardados = 0;
+    let duplicados = 0;
     
     for (const articulo of articulos) {
       try {
-        // Verificar si el artículo ya existe
+        // Normalizar el título para comparación (remover IDs y caracteres especiales)
+        const tituloNormalizado = this.normalizarTitulo(articulo.titulo);
+        
+        // Verificar si el artículo ya existe por múltiples criterios
         const articuloExistente = await prisma.articulo.findFirst({
           where: {
-            titulo: articulo.titulo,
-            fuente: articulo.fuente
+            AND: [
+              { fuente: articulo.fuente },
+              {
+                OR: [
+                  // Misma URL (duplicado exacto)
+                  { url: articulo.url },
+                  // Título muy similar (sin IDs)
+                  { 
+                    titulo: { 
+                      contains: tituloNormalizado.substring(0, 30)
+                    } 
+                  }
+                ]
+              }
+            ]
           }
         });
 
         if (articuloExistente) {
-          // Actualizar artículo existente
-          await prisma.articulo.update({
-            where: { id: articuloExistente.id },
-            data: {
-              contenido: articulo.contenido,
-              imagen: articulo.imagen,
-              categoriaId: articulo.categoriaId,
-              fecha: new Date()
-            }
-          });
+          // Actualizar artículo existente solo si hay cambios significativos
+          const contenidoCambio = articuloExistente.contenido !== articulo.contenido;
+          const imagenCambio = articuloExistente.imagen !== articulo.imagen;
+          
+          if (contenidoCambio || imagenCambio) {
+            await prisma.articulo.update({
+              where: { id: articuloExistente.id },
+              data: {
+                contenido: articulo.contenido,
+                imagen: articulo.imagen,
+                categoriaId: articulo.categoriaId,
+                fecha: new Date()
+              }
+            });
+            console.log(`🔄 Artículo actualizado: "${articulo.titulo}"`);
+          } else {
+            console.log(`⏭️ Artículo duplicado omitido: "${articulo.titulo}"`);
+            duplicados++;
+          }
         } else {
           // Crear nuevo artículo
           await prisma.articulo.create({
@@ -356,6 +383,7 @@ export class ScrapingService {
               categoriaId: articulo.categoriaId
             }
           });
+          console.log(`✅ Artículo guardado: "${articulo.titulo}"`);
         }
         guardados++;
       } catch (error) {
@@ -363,6 +391,34 @@ export class ScrapingService {
       }
     }
 
+    console.log(`📊 Resumen: ${guardados} procesados, ${duplicados} duplicados omitidos`);
     return guardados;
+  }
+
+  // Función para normalizar títulos y detectar duplicados
+  private normalizarTitulo(titulo: string): string {
+    return titulo
+      .toLowerCase()
+      .trim()
+      // Remover IDs al final (#1234567890)
+      .replace(/#\d+$/, '')
+      // Remover caracteres especiales y espacios extra
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  // Función para generar hash consistente del contenido
+  private generarHash(texto: string): string {
+    let hash = 0;
+    if (texto.length === 0) return hash.toString();
+    
+    for (let i = 0; i < texto.length; i++) {
+      const char = texto.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convertir a 32bit integer
+    }
+    
+    return Math.abs(hash).toString(36);
   }
 }

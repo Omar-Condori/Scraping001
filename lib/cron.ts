@@ -6,6 +6,7 @@ import { getCronExpression, getDescripcion } from '@/lib/scraping-config';
 export class CronService {
   private scrapingService: ScrapingService;
   private jobs: Map<string, cron.ScheduledTask> = new Map();
+  private jobStates: Map<string, { activo: boolean; inicio?: Date; fin?: Date; progreso?: number }> = new Map();
 
   constructor() {
     this.scrapingService = ScrapingService.getInstance();
@@ -60,6 +61,15 @@ export class CronService {
   }
 
   async ejecutarScrapingManual(): Promise<{ fuentesPersonalizadas: number }> {
+    const jobId = 'manual-scraping';
+    
+    // Marcar como activo
+    this.jobStates.set(jobId, { 
+      activo: true, 
+      inicio: new Date(),
+      progreso: 0
+    });
+    
     try {
       console.log('🔄 Ejecutando scraping manual...');
       
@@ -70,8 +80,20 @@ export class CronService {
       });
 
       let guardadosFuentesPersonalizadas = 0;
-      for (const fuente of fuentes) {
+      const totalFuentes = fuentes.length;
+      
+      for (let i = 0; i < fuentes.length; i++) {
+        const fuente = fuentes[i];
+        
         try {
+          // Actualizar progreso
+          const progreso = Math.round((i / totalFuentes) * 100);
+          this.jobStates.set(jobId, { 
+            activo: true, 
+            inicio: this.jobStates.get(jobId)?.inicio,
+            progreso
+          });
+          
           const articulos = await this.scrapingService.scrapeFuentePersonalizada(
             fuente.url,
             fuente.selectoresCss ? JSON.parse(fuente.selectoresCss) : {},
@@ -84,24 +106,52 @@ export class CronService {
         }
       }
 
+      // Marcar como completado
+      this.jobStates.set(jobId, { 
+        activo: false, 
+        inicio: this.jobStates.get(jobId)?.inicio,
+        fin: new Date(),
+        progreso: 100
+      });
+
       console.log(`✅ Scraping manual completado: ${guardadosFuentesPersonalizadas} artículos guardados`);
       
       return {
         fuentesPersonalizadas: guardadosFuentesPersonalizadas
       };
     } catch (error) {
+      // Marcar como error
+      this.jobStates.set(jobId, { 
+        activo: false, 
+        inicio: this.jobStates.get(jobId)?.inicio,
+        fin: new Date(),
+        progreso: 0
+      });
+      
       console.error('❌ Error en scraping manual:', error);
       throw error;
     }
   }
 
-  obtenerEstadoJobs(): { nombre: string; activo: boolean }[] {
-    const estados: { nombre: string; activo: boolean }[] = [];
+  obtenerEstadoJobs(): { nombre: string; activo: boolean; progreso?: number; inicio?: Date; fin?: Date }[] {
+    const estados: { nombre: string; activo: boolean; progreso?: number; inicio?: Date; fin?: Date }[] = [];
     
+    // Estados de jobs automáticos
     this.jobs.forEach((job, nombre) => {
       estados.push({
         nombre,
         activo: job.running
+      });
+    });
+
+    // Estados de jobs manuales
+    this.jobStates.forEach((estado, nombre) => {
+      estados.push({
+        nombre,
+        activo: estado.activo,
+        progreso: estado.progreso,
+        inicio: estado.inicio,
+        fin: estado.fin
       });
     });
 

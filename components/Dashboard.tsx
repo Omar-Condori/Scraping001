@@ -1,213 +1,205 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { BarChart3, FileText, Globe, AlertCircle, TrendingUp, RefreshCw } from 'lucide-react';
+
+interface ScrapingStatus {
+  procesando: boolean;
+  estado: string;
+  jobs: Array<{
+    nombre: string;
+    activo: boolean;
+    progreso?: number;
+    inicio?: string;
+    fin?: string;
+  }>;
+  timestamp: string;
+}
 
 export default function Dashboard() {
-  const [estadisticas, setEstadisticas] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [scrapingStatus, setScrapingStatus] = useState<ScrapingStatus | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
-    cargarEstadisticas();
-  }, []);
-
-  const cargarEstadisticas = async () => {
+  // Función para obtener el estado del scraping
+  const fetchScrapingStatus = async () => {
     try {
-      setLoading(true);
-      setError(null);
-      
-      console.log('🔄 Cargando estadísticas...');
-      const response = await fetch('/api/estadisticas');
-      
-      if (!response.ok) {
-        throw new Error(`Error HTTP: ${response.status}`);
-      }
-      
+      const response = await fetch('/api/scraping/status');
       const data = await response.json();
-      console.log('✅ Datos cargados:', data);
-      
-      setEstadisticas(data);
+      setScrapingStatus(data);
+      setLastUpdate(new Date());
     } catch (error) {
-      console.error('❌ Error al cargar estadísticas:', error);
-      setError(error instanceof Error ? error.message : 'Error desconocido');
-    } finally {
-      setLoading(false);
+      console.error('Error al obtener estado:', error);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Cargando estadísticas...</span>
-      </div>
-    );
-  }
+  // Función para ejecutar scraping manual
+  const ejecutarScraping = async () => {
+    setIsLoading(true);
+    setMessage('🚀 Iniciando scraping...');
+    
+    try {
+      const response = await fetch('/api/scraping', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ tipo: 'manual' }),
+      });
+      
+      const data = await response.json();
+      
+      if (data.estado === 'success') {
+        setMessage(`✅ ${data.mensaje}`);
+        
+        // Iniciar polling para monitorear el progreso
+        const interval = setInterval(async () => {
+          await fetchScrapingStatus();
+          
+          // Verificar si el scraping terminó
+          const currentStatus = await fetch('/api/scraping/status').then(r => r.json());
+          if (!currentStatus.procesando) {
+            clearInterval(interval);
+            setIsLoading(false);
+            setMessage('✅ Scraping completado exitosamente');
+            
+            // Actualizar contador de artículos
+            setTimeout(() => {
+              fetchScrapingStatus();
+            }, 1000);
+          }
+        }, 2000); // Polling cada 2 segundos
+        
+        // Timeout de seguridad (5 minutos)
+        setTimeout(() => {
+          clearInterval(interval);
+          setIsLoading(false);
+          setMessage('⏰ Scraping completado (tiempo máximo alcanzado)');
+        }, 300000);
+        
+      } else {
+        setMessage(`❌ Error: ${data.mensaje || data.error}`);
+        setIsLoading(false);
+      }
+    } catch (error) {
+      setMessage('❌ Error de conexión');
+      setIsLoading(false);
+    }
+  };
 
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">Error al cargar datos</h3>
-          <p className="text-gray-600 mb-4">{error}</p>
-          <button 
-            onClick={cargarEstadisticas}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Reintentar
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Cargar estado inicial
+  useEffect(() => {
+    fetchScrapingStatus();
+    const interval = setInterval(fetchScrapingStatus, 10000); // Actualizar cada 10 segundos
+    return () => clearInterval(interval);
+  }, []);
 
-  if (!estadisticas) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">No hay datos disponibles</h3>
-          <button 
-            onClick={cargarEstadisticas}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            Cargar datos
-          </button>
-        </div>
-      </div>
-    );
-  }
+  // Obtener el job de scraping manual
+  const manualJob = scrapingStatus?.jobs.find(job => job.nombre === 'manual-scraping');
+  const isProcessing = manualJob?.activo || false;
+  const progress = manualJob?.progreso || 0;
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-gray-900">Dashboard</h1>
-          <p className="text-gray-600 mt-1">Resumen de la plataforma de scraping</p>
+    <div className="p-6 max-w-4xl mx-auto">
+      <h1 className="text-3xl font-bold mb-6">Dashboard de Scraping</h1>
+      
+      {/* Estado del Scraping */}
+      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-4">Estado del Scraping</h2>
+        
+        <div className="flex items-center gap-4 mb-4">
+          <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+            isProcessing 
+              ? 'bg-yellow-100 text-yellow-800' 
+              : 'bg-green-100 text-green-800'
+          }`}>
+            {isProcessing ? '🔄 Procesando' : '✅ Disponible'}
+          </div>
+          
+          {lastUpdate && (
+            <span className="text-sm text-gray-500">
+              Última actualización: {lastUpdate.toLocaleTimeString()}
+            </span>
+          )}
         </div>
-        <button 
-          onClick={cargarEstadisticas}
-          className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+
+        {/* Barra de Progreso */}
+        {isProcessing && (
+          <div className="mb-4">
+            <div className="flex justify-between text-sm text-gray-600 mb-2">
+              <span>Progreso del scraping</span>
+              <span>{progress}%</span>
+            </div>
+            <div className="w-full bg-gray-200 rounded-full h-2">
+              <div 
+                className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                style={{ width: `${progress}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
+
+        {/* Botón de Scraping */}
+        <button
+          onClick={ejecutarScraping}
+          disabled={isLoading || isProcessing}
+          className={`px-6 py-3 rounded-lg font-medium transition-colors ${
+            isLoading || isProcessing
+              ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+              : 'bg-blue-600 text-white hover:bg-blue-700'
+          }`}
         >
-          <RefreshCw className="h-4 w-4 mr-2" />
-          Actualizar
+          {isLoading || isProcessing ? (
+            <span className="flex items-center gap-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+              {isProcessing ? `Procesando... ${progress}%` : 'Iniciando...'}
+            </span>
+          ) : (
+            '🚀 Ejecutar Scraping Manual'
+          )}
         </button>
+
+        {/* Mensaje de Estado */}
+        {message && (
+          <div className={`mt-4 p-3 rounded-lg ${
+            message.includes('✅') 
+              ? 'bg-green-100 text-green-800' 
+              : message.includes('❌')
+              ? 'bg-red-100 text-red-800'
+              : 'bg-blue-100 text-blue-800'
+          }`}>
+            {message}
+          </div>
+        )}
       </div>
 
-      {/* Resumen Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <FileText className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Artículos</p>
-              <p className="text-2xl font-bold text-gray-900">{estadisticas.resumen?.totalArticulos || 0}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Globe className="h-6 w-6 text-green-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Fuentes</p>
-              <p className="text-2xl font-bold text-gray-900">{estadisticas.resumen?.totalFuentes || 0}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <BarChart3 className="h-6 w-6 text-purple-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Categorías</p>
-              <p className="text-2xl font-bold text-gray-900">{estadisticas.resumen?.totalCategorias || 0}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <TrendingUp className="h-6 w-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Clasificados</p>
-              <p className="text-2xl font-bold text-gray-900">{estadisticas.resumen?.totalClasificados || 0}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-red-100 rounded-lg">
-              <AlertCircle className="h-6 w-6 text-red-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Errores</p>
-              <p className="text-2xl font-bold text-gray-900">{estadisticas.resumen?.erroresRecientes || 0}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Información adicional */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Estado del Sistema</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">Artículos por Categoría</h4>
-            <div className="space-y-2">
-              {estadisticas.articulosPorCategoria?.slice(0, 5).map((categoria: any) => (
-                <div key={categoria.id} className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{categoria.nombre}</span>
-                  <span className="text-sm font-medium text-gray-900">{categoria._count?.articulos || 0}</span>
+      {/* Información de Jobs */}
+      {scrapingStatus?.jobs && scrapingStatus.jobs.length > 0 && (
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h2 className="text-xl font-semibold mb-4">Jobs Activos</h2>
+          <div className="space-y-2">
+            {scrapingStatus.jobs.map((job, index) => (
+              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                <div>
+                  <span className="font-medium">{job.nombre}</span>
+                  {job.progreso !== undefined && (
+                    <span className="ml-2 text-sm text-gray-600">
+                      ({job.progreso}%)
+                    </span>
+                  )}
                 </div>
-              ))}
-            </div>
-          </div>
-          <div>
-            <h4 className="font-medium text-gray-700 mb-2">Fuentes Activas</h4>
-            <div className="space-y-2">
-              {estadisticas.articulosPorFuente?.slice(0, 5).map((fuente: any, index: number) => (
-                <div key={index} className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600">{fuente.fuente}</span>
-                  <span className="text-sm font-medium text-gray-900">{fuente._count?.fuente || 0}</span>
+                <div className={`px-2 py-1 rounded text-xs ${
+                  job.activo 
+                    ? 'bg-yellow-100 text-yellow-800' 
+                    : 'bg-gray-100 text-gray-600'
+                }`}>
+                  {job.activo ? 'Activo' : 'Inactivo'}
                 </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Logs Recientes */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h3 className="text-lg font-semibold text-gray-900 mb-4">Logs Recientes</h3>
-        <div className="space-y-3">
-          {estadisticas.logsRecientes?.slice(0, 5).map((log: any) => (
-            <div key={log.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center">
-                <div className={`w-2 h-2 rounded-full mr-3 ${
-                  log.estado === 'success' ? 'bg-green-500' : 
-                  log.estado === 'error' ? 'bg-red-500' : 'bg-yellow-500'
-                }`}></div>
-                <span className="text-sm text-gray-700">{log.mensaje}</span>
               </div>
-              <span className="text-xs text-gray-500">
-                {new Date(log.fecha).toLocaleString('es-ES')}
-              </span>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

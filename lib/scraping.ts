@@ -252,19 +252,38 @@ export class ScrapingService {
     
     for (const articulo of articulos) {
       try {
-        // Generar URL única basada en título y timestamp
-        const urlUnica = `${articulo.url}#${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-        
-        await prisma.articulo.create({
-          data: {
+        // Verificar si el artículo ya existe
+        const articuloExistente = await prisma.articulo.findFirst({
+          where: {
             titulo: articulo.titulo,
-            url: urlUnica,
-            contenido: articulo.contenido,
-            imagen: articulo.imagen,
-            fuente: articulo.fuente,
-            categoriaId: articulo.categoriaId
+            fuente: articulo.fuente
           }
         });
+
+        if (articuloExistente) {
+          // Actualizar artículo existente
+          await prisma.articulo.update({
+            where: { id: articuloExistente.id },
+            data: {
+              contenido: articulo.contenido,
+              imagen: articulo.imagen,
+              categoriaId: articulo.categoriaId,
+              fecha: new Date()
+            }
+          });
+        } else {
+          // Crear nuevo artículo
+          await prisma.articulo.create({
+            data: {
+              titulo: articulo.titulo,
+              url: articulo.url,
+              contenido: articulo.contenido,
+              imagen: articulo.imagen,
+              fuente: articulo.fuente,
+              categoriaId: articulo.categoriaId
+            }
+          });
+        }
         guardados++;
       } catch (error) {
         console.error(`Error al guardar artículo ${articulo.titulo}:`, error);

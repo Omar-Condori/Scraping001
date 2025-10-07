@@ -59,6 +59,8 @@ model Articulo {
   // Relaciones
   categoria Categoria? @relation(fields: [categoriaId], references: [id])
 
+  // Índice compuesto para evitar duplicados
+  @@unique([titulo, fuente], name: "titulo_fuente")
   @@map("articulos")
 }
 

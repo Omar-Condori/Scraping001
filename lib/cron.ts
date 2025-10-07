@@ -24,12 +24,11 @@ export class CronService {
 
         for (const fuente of fuentes) {
           try {
-            const selectores = JSON.parse(fuente.selectoresCss);
-            const articulos = await this.scrapingService.scrapeFuentePersonalizada(
-              fuente.url,
-              selectores,
-              fuente.limiteArticulos
-            );
+                 const articulos = await this.scrapingService.scrapeFuentePersonalizada(
+                   fuente.url,
+                   fuente.selectoresCss ? JSON.parse(fuente.selectoresCss) : {},
+                   fuente.limiteArticulos
+                 );
             const guardados = await this.scrapingService.guardarArticulos(articulos);
             console.log(`✅ Fuente ${fuente.nombre}: ${guardados} artículos guardados`);
           } catch (error) {
@@ -71,10 +70,9 @@ export class CronService {
       let guardadosFuentesPersonalizadas = 0;
       for (const fuente of fuentes) {
         try {
-          const selectores = JSON.parse(fuente.selectoresCss);
           const articulos = await this.scrapingService.scrapeFuentePersonalizada(
             fuente.url,
-            selectores,
+            fuente.selectoresCss ? JSON.parse(fuente.selectoresCss) : {},
             fuente.limiteArticulos
           );
           const guardados = await this.scrapingService.guardarArticulos(articulos);
